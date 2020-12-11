@@ -1,0 +1,139 @@
+on:
+  issues:
+    types: [opened]
+name: IssueOps - Encrypt issue content
+jobs:
+  prechecks:
+    if:  startsWith(github.event.issue.title, 'Encrypt issue content for ')
+    name: Pre-Check
+    runs-on: ubuntu-latest
+    outputs:
+      recipient: ${{ steps.prechecks.outputs.recipient }}
+      key: ${{ steps.prechecks.outputs.key }}
+      content: ${{ steps.prechecks.outputs.content }}
+    steps:
+      - name: Scan recipient, check key and content
+        id: prechecks
+        uses: actions/github-script@v3
+        env:
+          title: ${{ github.event.issue.title }}
+          body: ${{ github.event.issue.body }}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { title, body } = process.env;
+            let recipient = title.match(/^Encrypt issue content for @?(.*)/)[1]
+            if(!recipient || recipient.trim() === '') {
+              message = '👋  @' + context.actor + ', seems as if you have not specified a recipient in the issue title, please make sure to follow the issue template.'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+            if (!body || body.trim() === '') {
+              message = '👋  @' + context.actor + ', seems as if you have not put anything in the issue description to encrypt'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+            core.setOutput('content', body)
+
+            try {
+              const recipientAccount = await github.users.getByUsername({username: recipient})
+              core.setOutput('recipient', recipientAccount.data.login)
+            } catch (Error) {
+              message = '👋   @' + context.actor + ', seems as if the GitHub user account you have specified in the issue title does not exist: `' +  recipient + '`'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+            try {
+              const recipientKeys = await github.users.listPublicKeysForUser({username: recipient})
+              core.setOutput('key', recipientKeys.data[0].key)
+            } catch (Error) {
+              message = '👋  @' + context.actor + ', seems as if the GitHub user account you have specified in the issue title [has not registered](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account) any ssh key to encrypt your message: ' +  recipient
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+      - name: Pre-Check-Failed
+        id: precheck-failed
+        if: failure()
+        uses: actions/github-script@v3
+        env:
+          message: ${{steps.prechecks.outputs.error}}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { message } = process.env;
+            github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: message
+            })
+            github.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            })
+
+  act-on-issue:
+    needs: [prechecks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Received encryption request
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { recipient } = process.env;
+            github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: '👋  @' + context.actor + ' [encrypting](https://github.com/FiloSottile/age) issue description with @' + recipient + ' [public ssh keys](https://github.com/' + recipient + '.keys) ...'
+            })
+        env:
+          recipient: ${{needs.prechecks.outputs.recipient}}
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Encrypt issue content
+        id: encrypt
+        env:
+          recipient: ${{needs.prechecks.outputs.recipient}}
+          content: ${{needs.prechecks.outputs.content}}
+        run: |
+          echo "$content" > $recipient
+          ./encrypt.sh "$recipient" "$recipient" > ${recipient}.enc
+          echo "::set-output name=encrypted::"`cat ${recipient}.enc | base64 -w 0`
+      - name: Failure
+        if: (failure())
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            let log_url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/` + process.env.GITHUB_RUN_ID
+            github.issues.createComment({
+               ...context.repo,
+              issue_number: context.issue.number,
+              body: ':red_circle: Encryption attempt failed :cry:. [View details in the logs](' + log_url + ').'
+            })
+      - name: Provide encrypted message to user with instructions how to decrypt
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const commentBody = `\
+            ## :lock:  Decrypt your secret  :lock:
+            Run the following command to decrypt the message you have received from ${{github.actor}}:
+            \`\`\`bash
+            echo '${{steps.encrypt.outputs.encrypted}}' | base64 -D | ./decrypt.sh ~/.ssh/id_rsa
+            \`\`\`
+            `;
+            await github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            })
+            github.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            })

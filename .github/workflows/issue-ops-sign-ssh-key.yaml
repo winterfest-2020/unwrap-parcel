@@ -1,0 +1,158 @@
+on:
+  issues:
+    types: [opened]
+name: IssueOps - Sign ssh key
+jobs:
+  prechecks:
+    if:  startsWith(github.event.issue.title, 'Sign ssh key')
+    name: Pre-Check
+    runs-on: ubuntu-latest
+    outputs:
+      recipient: ${{ steps.prechecks.outputs.recipient }}
+      key: ${{ steps.prechecks.outputs.key }}
+      org: ${{ steps.prechecks.outputs.org }}
+      algo: ${{ steps.prechecks.outputs.algo }}
+    steps:
+      - name: Check key and certificate
+        id: prechecks
+        uses: actions/github-script@v3
+        env:
+          title: ${{ github.event.issue.title }}
+          body: ${{ github.event.issue.body }}
+          certificate: ${{ secrets.SSH_CERTIFICATE }}
+          org: ${{ github.event.repository.owner.login }}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { title, body, certificate, org } = process.env;
+            core.setOutput('org', org)
+
+            let recipient = title.match(/^Sign ssh key( for )?@?(.*)/)[2]
+            if(!recipient || recipient.trim() === '') {
+                recipient = context.actor
+            }
+
+            if (!certificate || certificate.trim() === '') {
+              message = '👋  @' + context.actor + ', seems as if this workflow was not setup with an SSH_CERTIFICATE [secret](https://docs.github.com/en/actions/reference/encrypted-secrets) yet - which is needed to [sign](https://docs.github.com/en/github/setting-up-and-managing-organizations-and-teams/about-ssh-certificate-authorities) the key of the user you provided.'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+            try {
+              const recipientAccount = await github.users.getByUsername({username: recipient})
+              core.setOutput('recipient', recipientAccount.data.login)
+            } catch (Error) {
+              message = '👋  @' + context.actor + ', seems as if the GitHub user account you have specified in the issue title does not exist: `' +  recipient + '`'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+            keyIndex=0
+            try {
+                keyIndex=body.match(/^\/sign-ssh-key ([\d]+)/)[1]
+            } catch (Error) {
+              // parsing error, stick with first key
+            }
+
+            try {
+              const recipientKeys = await github.users.listPublicKeysForUser({username: recipient})
+              let key = recipientKeys.data[keyIndex].key
+              core.setOutput('key', key)
+              let algo = key.match(/^ssh-([\w]*)/)[1]
+              core.setOutput('algo', algo)
+            } catch (Error) {
+              message = '👋  @' + context.actor + ', seems as if @' + recipient + ' [has not registered](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account) any key that could be signed, or the specified key index (' + keyIndex + ') was out of range.'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+      - name: Pre-Check-Failed
+        id: precheck-failed
+        if: failure()
+        uses: actions/github-script@v3
+        env:
+          message: ${{steps.prechecks.outputs.error}}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { message } = process.env;
+            github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: message
+            })
+            github.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            })
+  act-on-issue:
+    runs-on: ubuntu-latest
+    needs: [prechecks]
+    steps:
+      - name: Signing request received
+        uses: actions/github-script@v3
+        env:
+          recipient: ${{needs.prechecks.outputs.recipient}}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { recipient } = process.env;
+            github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: '👋  @' + context.actor + ', starting to sign the [public ssh key](https://github.com/' + recipient + '.keys) by your [certificate authority](https://docs.github.com/en/github/setting-up-and-managing-organizations-and-teams/about-ssh-certificate-authorities) of user @' + recipient + ' ...'
+            })
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Signing ssh key
+        id: sign
+        run: |
+          ./sign-ssh-key.sh "$RECIPIENT" "id_${ALGO}_${RECIPIENT}_${ORG}"
+          echo "::set-output name=sign::"`cat id_${ALGO}_${RECIPIENT}_${ORG}-cert.pub | base64 -w 0`
+          echo
+        env:
+          SSH_CERTIFICATE: ${{ secrets.SSH_CERTIFICATE }}
+          RECIPIENT: ${{needs.prechecks.outputs.recipient}}
+          KEY: ${{needs.prechecks.outputs.key}}
+          ORG: ${{needs.prechecks.outputs.org}}
+          ALGO: ${{needs.prechecks.outputs.algo}}
+      - name: Failure
+        if: (failure())
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            let log_url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/` + process.env.GITHUB_RUN_ID
+            github.issues.createComment({
+               ...context.repo,
+              issue_number: context.issue.number,
+              body: ':red_circle: Key signing attempt failed :cry:. [View details in the logs](' + log_url + ').'
+            })
+      - name: Provide key to the user
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const commentBody = `\
+            ## :key:  New signed SSH key  :key:
+            Run the following command to show your signed key:
+            \`\`\`bash
+            echo '${{steps.sign.outputs.sign}}' | base64 -D
+            \`\`\`
+
+            Run the following command to install your signed key as default key (may override existing key):
+            \`\`\`bash
+            echo '${{steps.sign.outputs.sign}}' | base64 -D > $HOME/.ssh/id_${{needs.prechecks.outputs.algo}}-cert.pub
+            \`\`\`
+            `;
+            await github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            })
+            github.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            })

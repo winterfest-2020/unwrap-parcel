@@ -1,0 +1,113 @@
+on:
+  issues:
+    types: [opened]
+name: IssueOps - Send encrypted Winterfest parcel
+jobs:
+  prechecks:
+    if:  startsWith(github.event.issue.title, 'Send me my encrypted Winterfest parcel please')
+    name: Pre-Check
+    runs-on: ubuntu-latest
+    outputs:
+      recipient: ${{ steps.prechecks.outputs.recipient }}
+    steps:
+      - name: Check key and content
+        id: prechecks
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            recipient = context.actor
+
+            try {
+              const recipientKeys = await github.users.listPublicKeysForUser({username: recipient})
+            } catch (Error) {
+              message = '👋  @' + context.actor + ', seems as if you have not registered any ssh :key: to unwrap your :gift:, please [register](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account) one first :smile:.'
+              core.setOutput('error', message)
+              throw new Error(message)
+            }
+
+            core.setOutput('recipient', recipient)
+
+      - name: Pre-Check-Failed
+        id: precheck-failed
+        if: failure()
+        uses: actions/github-script@v3
+        env:
+          message: ${{steps.prechecks.outputs.error}}
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { message } = process.env;
+            github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: message
+            })
+            github.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            })
+
+  act-on-issue:
+    needs: [prechecks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Received encryption request
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { recipient } = process.env;
+            github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: '👋  @' + context.actor + ' [encrypting/wrapping](https://github.com/FiloSottile/age) your Winterfest :gift: with your [public ssh keys](https://github.com/' + context.actor + '.keys) ...'
+            })
+        env:
+          recipient: ${{needs.prechecks.outputs.recipient}}
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Encrypt issue content
+        id: encrypt
+        env:
+          recipient: ${{needs.prechecks.outputs.recipient}}
+          content: ${{secrets.WINTERFEST_SECRET}}
+        run: |
+          echo "$content" > $recipient
+          ./encrypt.sh "$recipient" "$recipient" > ${recipient}.enc
+          echo "::set-output name=encrypted::"`cat ${recipient}.enc | base64 -w 0`
+      - name: Failure
+        if: (failure())
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            let log_url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/` + process.env.GITHUB_RUN_ID
+            github.issues.createComment({
+               ...context.repo,
+              issue_number: context.issue.number,
+              body: ':red_circle: Encryption attempt failed :cry:. [View details in the logs](' + log_url + ').'
+            })
+      - name: Provide encrypted parcel to user with instructions how to unwrap
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const commentBody = `\
+            ## :lock:  Unwrap your :gift:  :lock:
+            Run the following command to decrypt the message you have received in the directory where you have cloned this repository:
+            \`\`\`bash
+            echo '${{steps.encrypt.outputs.encrypted}}' | base64 -d | ./decrypt.sh ~/.ssh/id_rsa
+            \`\`\`
+            `;
+            await github.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            })
+            github.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            })
