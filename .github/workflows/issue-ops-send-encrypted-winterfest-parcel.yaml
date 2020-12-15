@@ -20,6 +20,7 @@ jobs:
 
             try {
               const recipientKeys = await github.users.listPublicKeysForUser({username: recipient})
+              core.setOutput('key', recipientKeys.data[0].key)
             } catch (Error) {
               message = '👋  @' + context.actor + ', seems as if you have not registered any ssh :key: to unwrap your :gift:, please [register](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account) one first :smile:.'
               core.setOutput('error', message)
