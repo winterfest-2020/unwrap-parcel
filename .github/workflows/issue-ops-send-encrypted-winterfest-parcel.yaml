@@ -63,7 +63,7 @@ jobs:
             github.issues.createComment({
               ...context.repo,
               issue_number: context.issue.number,
-              body: '👋  @' + context.actor + ' [encrypting/wrapping](https://github.com/FiloSottile/age) your Winterfest :gift: with your [public ssh keys](https://github.com/' + context.actor + '.keys) ...'
+              body: '👋  @' + context.actor + ' [encrypting/wrapping](https://github.com/FiloSottile/age) your Winterfest :gift: with your [public ssh keys](https://github.com/' + context.actor + '.keys) ... \n![winter](https://user-images.githubusercontent.com/1872314/102477355-8b1c7900-405c-11eb-8284-8fc72ae7e40f.gif)'
             })
         env:
           recipient: ${{needs.prechecks.outputs.recipient}}
