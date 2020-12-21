@@ -20,7 +20,7 @@ If we had a way to automate all steps by just creating an issue - the ssh certif
 
 3. [Set](https://docs.github.com/en/actions/reference/encrypted-secrets) your CA private key as `SSH_CERTIFICATE`secret
 
-4. Create an issue with the `Sign ssh key` [issue template](.github/ISSUE_TEMPLATE/sign-ssh-key.md) which will trigger the [issue ops sign ssh key workflow](.github/issue-ops-sign-ssh-key.yaml)
+4. Create an issue with the `Sign ssh key` [issue template](.github/ISSUE_TEMPLATE/sign-ssh-key.md) which will trigger the [issue ops sign ssh key workflow](.github/workflows/issue-ops-sign-ssh-key.yaml)
 
 ![image](https://user-images.githubusercontent.com/1872314/93902210-9844f880-fcf7-11ea-9723-3e0d57622b1d.png)
 
@@ -28,8 +28,13 @@ If we had a way to automate all steps by just creating an issue - the ssh certif
 
 ### :lock: Bonus encryption / decryption IssueOps workflow :lock:
 
-In a first iteration, we experimented with generating ssh keys from scratch and send them encrypted to the user. We abandoned this idea for signing already uploaded ssh keys. A leftover from our experiments is an [IssueOps encryption workflow](.github/issue-ops-encrypt-content.yaml) that can be triggered by using the `Encrypt and share content` [issue template](.github/ISSUE_TEMPLATE/encrypt-content.md) and encrypts any content in the issue description with the public ssh keys of the specified recipient (with a comment how to decrypt):
+In a first iteration, we experimented with generating ssh keys from scratch and send them encrypted to the user. We abandoned this idea for signing already uploaded ssh keys. A leftover from our experiments is an [IssueOps encryption workflow](.github/workflows/issue-ops-encrypt-content.yaml) that can be triggered by using the `Encrypt and share content` [issue template](.github/ISSUE_TEMPLATE/encrypt-content.md) and encrypts any content in the issue description with the public ssh keys of the specified recipient (with a comment how to decrypt):
 
 ![image](https://user-images.githubusercontent.com/1872314/93903714-50bf6c00-fcf9-11ea-85e1-a793144aa384.png)
 
 For encryption/decryption, the portable, lightweight encryption tool [age](https://github.com/FiloSottile/age) is used, which could either be used directly from this repo template (Windows, Linux, Mac) or [build/installed from scratch](https://github.com/FiloSottile/age#installation).
+
+### :gift: Second bonus - Encrypted Winterfest parcels :gift:
+
+For GitHub Winterfest - we designed a [third IssueOps workflow](.github/workflows/issue-ops-send-encrypted-winterfest-parcel.yaml) that is very similar to the encryption based one just that it always assumes the issue opener to be the receiver and a configurable secret `WINTERFEST_SECRET` is used as encrypted payload. It also comes with a [festive issue template](.github/ISSUE_TEMPLATE/send-encrypted-winterfest-parcel.md).
+Have fun trying it out.
