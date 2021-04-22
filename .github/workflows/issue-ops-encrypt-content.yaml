@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Scan recipient, check key and content
         id: prechecks
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.0.1
         env:
           title: ${{ github.event.issue.title }}
           body: ${{ github.event.issue.body }}
@@ -57,7 +57,7 @@ jobs:
       - name: Pre-Check-Failed
         id: precheck-failed
         if: failure()
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.0.1
         env:
           message: ${{steps.prechecks.outputs.error}}
         with:
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Received encryption request
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.0.1
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -105,7 +105,7 @@ jobs:
           echo "::set-output name=encrypted::"`cat ${recipient}.enc | base64 -w 0`
       - name: Failure
         if: (failure())
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.0.1
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -116,7 +116,7 @@ jobs:
               body: ':red_circle: Encryption attempt failed :cry:. [View details in the logs](' + log_url + ').'
             })
       - name: Provide encrypted message to user with instructions how to decrypt
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.0.1
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
