@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Check key and certificate
         id: prechecks
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.1
         env:
           title: ${{ github.event.issue.title }}
           body: ${{ github.event.issue.body }}
@@ -69,7 +69,7 @@ jobs:
       - name: Pre-Check-Failed
         id: precheck-failed
         if: failure()
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.1
         env:
           message: ${{steps.prechecks.outputs.error}}
         with:
@@ -91,7 +91,7 @@ jobs:
     needs: [prechecks]
     steps:
       - name: Signing request received
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.1
         env:
           recipient: ${{needs.prechecks.outputs.recipient}}
         with:
@@ -119,7 +119,7 @@ jobs:
           ALGO: ${{needs.prechecks.outputs.algo}}
       - name: Failure
         if: (failure())
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.1
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -130,7 +130,7 @@ jobs:
               body: ':red_circle: Key signing attempt failed :cry:. [View details in the logs](' + log_url + ').'
             })
       - name: Provide key to the user
-        uses: actions/github-script@v3
+        uses: actions/github-script@v4.1
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
