@@ -104,7 +104,7 @@ jobs:
               body: '👋  @' + context.actor + ', starting to sign the [public ssh key](https://github.com/' + recipient + '.keys) by your [certificate authority](https://docs.github.com/en/github/setting-up-and-managing-organizations-and-teams/about-ssh-certificate-authorities) of user @' + recipient + ' ...'
             })
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
       - name: Signing ssh key
         id: sign
         run: |
